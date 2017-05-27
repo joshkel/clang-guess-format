@@ -4,6 +4,7 @@ using namespace std;
 
 #include "clang/Format/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/YAMLTraits.h"
 
 using std::cout;
 using namespace llvm;
@@ -75,6 +76,10 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, const std::vector<T>& Values,
                std::function<void(FormatStyle&, T)> Apply)
 {
+  bool HasBestValue = false;
+  int MinTotalDistance = std::numeric_limits<int>::max();
+  T BestValue = {};
+
   for (const T& v : Values) {
     Apply(Style, v);
 
@@ -92,8 +97,28 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
       TotalDistance += getTotalDistance(*CodeFile.Code, FormatChanges);
     }
 
-    cout << v << ": " << TotalDistance << "\n";
+    if (!HasBestValue) {
+      MinTotalDistance = TotalDistance;
+      BestValue = v;
+      HasBestValue = true;
+      outs() << "# ";
+    } else {
+      if (TotalDistance < MinTotalDistance) {
+        MinTotalDistance = TotalDistance;
+        BestValue = v;
+      }
+      outs() << ", ";
+    }
+    outs() << v << " " << TotalDistance;
   }
+  outs() << "\n" << ValueName << ": ";
+
+  {
+    llvm::yaml::Output Output(outs());
+    yamlize(Output, BestValue, true);
+  }
+
+  outs() << "\n";
 }
 
 template<typename T>
@@ -130,15 +155,16 @@ int main(int argc, char **argv)
 
   FormatStyle Style;
 
-  tryFormat<const char*>(
+  tryFormat<std::string>(
       Style, CodeFiles, "BasedOnStyle",
       { "LLVM", "Google", "Chromium", "Mozilla", "WebKit" },
-      [](FormatStyle& Style, const char *StyleName) {
+      [](FormatStyle& Style, std::string StyleName) {
         if (!clang::format::getPredefinedStyle(StyleName, FormatStyle::LK_Cpp, &Style)) {
           errs() << "Failed to get style " << StyleName << "\n";
           exit(1);
         }
       });
+
   /*
   FormatStyle Style;
   clang::format::getPredefinedStyle("Mozilla", FormatStyle::LK_Cpp, &Style);
