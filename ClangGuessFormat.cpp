@@ -72,10 +72,21 @@ std::vector<bool> getValues<bool>()
 }
 
 template<typename T>
+std::string stringize(T Value)
+{
+  std::string Text;
+  llvm::raw_string_ostream Stream(Text);
+  llvm::yaml::Output Output(Stream);
+  yamlize(Output, Value, true);
+  return Text;
+}
+
+template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, const std::vector<T>& Values,
                std::function<void(FormatStyle&, T)> Apply)
 {
+  bool FirstRun = true;
   bool HasBestValue = false;
   int MinTotalDistance = std::numeric_limits<int>::max();
   T BestValue = {};
@@ -83,7 +94,16 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
   for (const T& v : Values) {
     Apply(Style, v);
 
+    if (FirstRun) {
+      FirstRun = false;
+      outs() << "# ";
+    } else {
+      outs() << ", ";
+    }
+    outs() << stringize(v) << " ";
+
     int TotalDistance = 0;
+    bool HasFailures = false;
     for (const auto& CodeFile : CodeFiles) {
       bool IncompleteFormat;
       Replacements FormatChanges = reformat(Style, CodeFile.Code->getBuffer(),
@@ -91,45 +111,44 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                                             &IncompleteFormat);
       if (IncompleteFormat) {
         errs() << CodeFile.FileName << ": " << ValueName << " " << v << "Failed\n";
+        HasFailures = true;
         continue;
       }
 
       TotalDistance += getTotalDistance(*CodeFile.Code, FormatChanges);
     }
 
+    if (HasFailures) {
+      outs() << "failed";
+      continue;
+    }
+
     if (!HasBestValue) {
       MinTotalDistance = TotalDistance;
       BestValue = v;
       HasBestValue = true;
-      outs() << "# ";
     } else {
       if (TotalDistance < MinTotalDistance) {
         MinTotalDistance = TotalDistance;
         BestValue = v;
       }
-      outs() << ", ";
     }
-    outs() << v << " " << TotalDistance;
-  }
-  outs() << "\n" << ValueName << ": ";
-
-  {
-    llvm::yaml::Output Output(outs());
-    yamlize(Output, BestValue, true);
+    outs() << TotalDistance;
   }
 
-  outs() << "\n";
+  outs() << "\n" << ValueName << ": " << stringize(BestValue) << "\n";
+  Apply(Style, BestValue);
 }
 
 template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, T FormatStyle::*Value)
 {
-  tryFormat(Style, CodeFiles, ValueName, getValues<T>(),
-            [Value](FormatStyle& Style, T v) { (Style.*Value) = v; });
+  tryFormat<T>(Style, CodeFiles, ValueName, getValues<T>(),
+               [Value](FormatStyle& Style, T v) { (Style.*Value) = v; });
 }
 
-#define TRY(x)
+#define TRY_FORMAT(Style, CodeFiles, Value) tryFormat(Style, CodeFiles, #Value, &FormatStyle::Value)
 
 int main(int argc, char **argv)
 {
@@ -164,6 +183,8 @@ int main(int argc, char **argv)
           exit(1);
         }
       });
+
+  TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
 
   /*
   FormatStyle Style;
