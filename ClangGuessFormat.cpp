@@ -109,8 +109,8 @@ std::string stringize(T Value)
 }
 
 template<typename T>
-std::string valueToString(const FormatStyle& Style, const char *ValueName,
-                          T Value)
+typename std::enable_if<!llvm::yaml::has_ScalarTraits<T>::value, std::string>::type
+valueToString(const FormatStyle& Style, const char *ValueName, T Value)
 {
   // Hack: We have no generic way of converting a single value to a string.
   // (Within Format.cpp, ScalarEnumerationTraits is specialized for each enum,
@@ -127,16 +127,9 @@ std::string valueToString(const FormatStyle& Style, const char *ValueName,
   return std::string(Config, From, To - From);
 }
 
-template<>
-std::string valueToString<bool>(const FormatStyle& Style, const char *ValueName,
-                                bool Value)
-{
-  return stringize(Value);
-}
-
-template<>
-std::string valueToString<std::string>(const FormatStyle& Style,
-                                       const char *ValueName, std::string Value)
+template<typename T>
+typename std::enable_if<llvm::yaml::has_ScalarTraits<T>::value, std::string>::type
+valueToString(const FormatStyle& Style, const char *ValueName, T Value)
 {
   return stringize(Value);
 }
