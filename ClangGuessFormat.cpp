@@ -71,6 +71,33 @@ std::vector<bool> getValues<bool>()
   return { false, true };
 }
 
+typedef FormatStyle FS;
+
+template<>
+std::vector<FS::BracketAlignmentStyle> getValues<FS::BracketAlignmentStyle>()
+{
+  return { FS::BAS_Align, FS::BAS_DontAlign, FS::BAS_AlwaysBreak };
+}
+
+template<>
+std::vector<FS::ShortFunctionStyle> getValues<FS::ShortFunctionStyle>()
+{
+  return { FS::SFS_None, FS::SFS_Empty, FS::SFS_Inline, FS::SFS_All };
+}
+
+template<typename T>
+struct MemberSetter {
+  T FormatStyle::*Member;
+  void operator()(FormatStyle& Style, T Value) {
+    Style.*Member = Value;
+  }
+};
+
+template<typename T>
+MemberSetter<T> memberSetter(T FormatStyle::*Member) {
+  return { Member };
+}
+
 template<typename T>
 std::string stringize(T Value)
 {
@@ -101,7 +128,7 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                                             CodeFile.Ranges, CodeFile.FileName,
                                             &IncompleteFormat);
       if (IncompleteFormat) {
-        errs() << CodeFile.FileName << ": " << ValueName << " " << v << "Failed\n";
+        errs() << CodeFile.FileName << ": " << ValueName << " " << v << " Failed\n";
         HasFailures = true;
         break;
       }
@@ -155,10 +182,10 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
 
 template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
-               const char *ValueName, T FormatStyle::*Value)
+               const char *ValueName, T FormatStyle::*Member)
 {
   tryFormat<T>(Style, CodeFiles, ValueName, getValues<T>(),
-               [Value](FormatStyle& Style, T v) { (Style.*Value) = v; });
+               memberSetter(Member));
 }
 
 #define TRY_FORMAT(Style, CodeFiles, Value) tryFormat(Style, CodeFiles, #Value, &FormatStyle::Value)
@@ -198,7 +225,22 @@ int main(int argc, char **argv)
           }
         });
 
+    tryFormat<int>(Style, CodeFiles, "AccessModifierOffset",
+                   { -8, -4, -2, 0, 2, 4, 8 },
+                   memberSetter(&FormatStyle::AccessModifierOffset));
+
+    //TRY_FORMAT(Style, CodeFiles, AlignAfterOpenBracket);
+    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveAssignments);
+    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveDeclarations);
+    TRY_FORMAT(Style, CodeFiles, AlignEscapedNewlinesLeft);
+    TRY_FORMAT(Style, CodeFiles, AlignOperands);
+    TRY_FORMAT(Style, CodeFiles, AlignTrailingComments);
+    TRY_FORMAT(Style, CodeFiles, AllowAllParametersOfDeclarationOnNextLine);
+    TRY_FORMAT(Style, CodeFiles, AllowShortBlocksOnASingleLine);
+    TRY_FORMAT(Style, CodeFiles, AllowShortCaseLabelsOnASingleLine);
+    //TRY_FORMAT(Style, CodeFiles, AllowShortFunctionsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
+    TRY_FORMAT(Style, CodeFiles, AllowShortLoopsOnASingleLine);
   } catch (std::exception& e) {
     errs() << e.what() << "\n";
     return 1;
