@@ -123,7 +123,7 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
     int TotalDistance = 0;
     bool HasFailures = false;
     for (const auto& CodeFile : CodeFiles) {
-      bool IncompleteFormat;
+      bool IncompleteFormat = false;
       Replacements FormatChanges = reformat(Style, CodeFile.Code->getBuffer(),
                                             CodeFile.Ranges, CodeFile.FileName,
                                             &IncompleteFormat);
