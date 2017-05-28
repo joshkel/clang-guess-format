@@ -86,21 +86,12 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, const std::vector<T>& Values,
                std::function<void(FormatStyle&, T)> Apply)
 {
-  bool FirstRun = true;
-  bool HasBestValue = false;
-  int MinTotalDistance = std::numeric_limits<int>::max();
-  T BestValue = {};
+  // Total edit distance for each value
+  std::vector<std::pair<T, int>> Results;
+  const int FAILED = std::numeric_limits<int>::max();
 
   for (const T& v : Values) {
     Apply(Style, v);
-
-    if (FirstRun) {
-      FirstRun = false;
-      outs() << "# ";
-    } else {
-      outs() << ", ";
-    }
-    outs() << stringize(v) << " ";
 
     int TotalDistance = 0;
     bool HasFailures = false;
@@ -112,32 +103,54 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
       if (IncompleteFormat) {
         errs() << CodeFile.FileName << ": " << ValueName << " " << v << "Failed\n";
         HasFailures = true;
-        continue;
+        break;
       }
 
       TotalDistance += getTotalDistance(*CodeFile.Code, FormatChanges);
     }
 
-    if (HasFailures) {
-      outs() << "failed";
-      continue;
-    }
-
-    if (!HasBestValue) {
-      MinTotalDistance = TotalDistance;
-      BestValue = v;
-      HasBestValue = true;
-    } else {
-      if (TotalDistance < MinTotalDistance) {
-        MinTotalDistance = TotalDistance;
-        BestValue = v;
-      }
-    }
-    outs() << TotalDistance;
+    if (HasFailures)
+      Results.push_back({v, FAILED});
+    else
+      Results.push_back({v, TotalDistance});
   }
 
-  outs() << "\n" << ValueName << ": " << stringize(BestValue) << "\n";
-  Apply(Style, BestValue);
+  std::sort(Results.begin(), Results.end(),
+      [](const std::pair<T, int>& a, const std::pair<T, int>& b) {
+        return a.second < b.second;
+      });
+
+  if (Results.empty()) {
+    throw std::runtime_error(std::string("Failed to find any values for ")
+                             + ValueName);
+  } else if (Results[0].second == FAILED) {
+    throw std::runtime_error(std::string("No usable values found for ")
+                             + ValueName);
+  }
+
+  outs() << "\n";
+
+  // Print the best value as a configuration setting.
+  if (Results.size() > 1 && Results[0].second == Results[1].second)
+    outs() << "# " << ValueName << ": ???\n";
+  else
+    outs() << ValueName << ": " << stringize(Results[0].first) << "\n";
+
+  // Print full results as a comment.
+  outs() << "# ";
+  for (const auto& i : Results) {
+    if (i != *Results.begin())
+      outs() << ", ";
+    outs() << stringize(i.first) << " ";
+    if (i.second == FAILED)
+      outs() << "failed";
+    else
+      outs() << i.second;
+  }
+  outs() << "\n";
+
+  // And lock in one of the values for further work.
+  Apply(Style, Results[0].first);
 }
 
 template<typename T>
@@ -174,35 +187,22 @@ int main(int argc, char **argv)
 
   FormatStyle Style;
 
-  tryFormat<std::string>(
-      Style, CodeFiles, "BasedOnStyle",
-      { "LLVM", "Google", "Chromium", "Mozilla", "WebKit" },
-      [](FormatStyle& Style, std::string StyleName) {
-        if (!clang::format::getPredefinedStyle(StyleName, FormatStyle::LK_Cpp, &Style)) {
-          errs() << "Failed to get style " << StyleName << "\n";
-          exit(1);
-        }
-      });
+  try {
+    tryFormat<std::string>(
+        Style, CodeFiles, "BasedOnStyle",
+        { "LLVM", "Google", "Chromium", "Mozilla", "WebKit" },
+        [](FormatStyle& Style, std::string StyleName) {
+          if (!clang::format::getPredefinedStyle(StyleName, FormatStyle::LK_Cpp, &Style)) {
+            errs() << "Failed to get style " << StyleName << "\n";
+            exit(1);
+          }
+        });
 
-  TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
-
-  /*
-  FormatStyle Style;
-  clang::format::getPredefinedStyle("Mozilla", FormatStyle::LK_Cpp, &Style);
-  for (int i = 0; i <= 1; i++) {
-    Style.AllowShortIfStatementsOnASingleLine = i;
-
-    bool IncompleteFormat;
-    Replacements FormatChanges = reformat(Style, Code->getBuffer(), Ranges, FileName, &IncompleteFormat);
-    if (IncompleteFormat) {
-      cout << "Failed\n";
-      return 1;
-    }
-
-    cout << i << ": " << FormatChanges.size() << endl;
-
-    int TotalDistance = getTotalDistance(*Code, FormatChanges);
-    cout << "    " << TotalDistance << endl;
+    TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
+  } catch (std::exception& e) {
+    errs() << e.what() << "\n";
+    return 1;
   }
-  */
+
+  return 0;
 }
