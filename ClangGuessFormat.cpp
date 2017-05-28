@@ -109,12 +109,50 @@ std::string stringize(T Value)
 }
 
 template<typename T>
+std::string valueToString(const FormatStyle& Style, const char *ValueName,
+                          T Value)
+{
+  // Hack: We have no generic way of converting a single value to a string.
+  // (Within Format.cpp, ScalarEnumerationTraits is specialized for each enum,
+  // but that's not accessible outside of the file.)  The only generic solution
+  // is to dump the entire configuration to string then extract what we want.
+  const std::string Config = clang::format::configurationAsText(Style);
+  std::string ValueKey = "\n" + std::string(ValueName) + ": ";
+  std::string::size_type Found = Config.find(ValueKey);
+  if (Found == std::string::npos)
+    throw std::runtime_error(std::string("Failed to find ") + ValueName
+                             + " within config");
+  std::string::size_type From = Found + ValueKey.size();
+  std::string::size_type To = Config.find('\n', From);
+  return std::string(Config, From, To - From);
+}
+
+template<>
+std::string valueToString<bool>(const FormatStyle& Style, const char *ValueName,
+                                bool Value)
+{
+  return stringize(Value);
+}
+
+template<>
+std::string valueToString<std::string>(const FormatStyle& Style,
+                                       const char *ValueName, std::string Value)
+{
+  return stringize(Value);
+}
+
+template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, const std::vector<T>& Values,
                std::function<void(FormatStyle&, T)> Apply)
 {
   // Total edit distance for each value
-  std::vector<std::pair<T, int>> Results;
+  struct ResultType {
+    T Value;
+    std::string ValueString;
+    int TotalDistance;
+  };
+  std::vector<ResultType> Results;
   const int FAILED = std::numeric_limits<int>::max();
 
   for (const T& v : Values) {
@@ -136,21 +174,22 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
       TotalDistance += getTotalDistance(*CodeFile.Code, FormatChanges);
     }
 
+    std::string ValueString = valueToString(Style, ValueName, v);
     if (HasFailures)
-      Results.push_back({v, FAILED});
+      Results.push_back({v, ValueString, FAILED});
     else
-      Results.push_back({v, TotalDistance});
+      Results.push_back({v, ValueString, TotalDistance});
   }
 
   std::sort(Results.begin(), Results.end(),
-      [](const std::pair<T, int>& a, const std::pair<T, int>& b) {
-        return a.second < b.second;
+      [](const ResultType& a, const ResultType& b) {
+        return a.TotalDistance < b.TotalDistance;
       });
 
   if (Results.empty()) {
     throw std::runtime_error(std::string("Failed to find any values for ")
                              + ValueName);
-  } else if (Results[0].second == FAILED) {
+  } else if (Results[0].TotalDistance == FAILED) {
     throw std::runtime_error(std::string("No usable values found for ")
                              + ValueName);
   }
@@ -158,26 +197,26 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
   outs() << "\n";
 
   // Print the best value as a configuration setting.
-  if (Results.size() > 1 && Results[0].second == Results[1].second)
+  if (Results.size() > 1 && Results[0].TotalDistance == Results[1].TotalDistance)
     outs() << "# " << ValueName << ": ???\n";
   else
-    outs() << ValueName << ": " << stringize(Results[0].first) << "\n";
+    outs() << ValueName << ": " << Results[0].ValueString << "\n";
 
   // Print full results as a comment.
   outs() << "# ";
   for (const auto& i : Results) {
-    if (i != *Results.begin())
+    if (i.Value != Results[0].Value)
       outs() << ", ";
-    outs() << stringize(i.first) << " ";
-    if (i.second == FAILED)
+    outs() << i.ValueString << " ";
+    if (i.TotalDistance == FAILED)
       outs() << "failed";
     else
-      outs() << i.second;
+      outs() << i.TotalDistance;
   }
   outs() << "\n";
 
   // And lock in one of the values for further work.
-  Apply(Style, Results[0].first);
+  Apply(Style, Results[0].Value);
 }
 
 template<typename T>
@@ -229,7 +268,7 @@ int main(int argc, char **argv)
                    { -8, -4, -2, 0, 2, 4, 8 },
                    memberSetter(&FormatStyle::AccessModifierOffset));
 
-    //TRY_FORMAT(Style, CodeFiles, AlignAfterOpenBracket);
+    TRY_FORMAT(Style, CodeFiles, AlignAfterOpenBracket);
     TRY_FORMAT(Style, CodeFiles, AlignConsecutiveAssignments);
     TRY_FORMAT(Style, CodeFiles, AlignConsecutiveDeclarations);
     TRY_FORMAT(Style, CodeFiles, AlignEscapedNewlinesLeft);
@@ -238,7 +277,7 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, AllowAllParametersOfDeclarationOnNextLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortBlocksOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortCaseLabelsOnASingleLine);
-    //TRY_FORMAT(Style, CodeFiles, AllowShortFunctionsOnASingleLine);
+    TRY_FORMAT(Style, CodeFiles, AllowShortFunctionsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortLoopsOnASingleLine);
   } catch (std::exception& e) {
