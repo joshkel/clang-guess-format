@@ -74,15 +74,66 @@ std::vector<bool> getValues<bool>()
 typedef FormatStyle FS;
 
 template<>
+std::vector<FS::BinaryOperatorStyle> getValues<FS::BinaryOperatorStyle>()
+{
+  return { FS::BOS_None, FS::BOS_NonAssignment, FS::BOS_All };
+}
+
+template<>
+std::vector<FS::BraceBreakingStyle> getValues<FS::BraceBreakingStyle>()
+{
+  // BS_Custom is not yet supported.  (See "BraceWrapping" below.)
+  return { FS::BS_Attach, FS::BS_Linux, FS::BS_Mozilla, FS::BS_Stroustrup,
+           FS::BS_Allman, FS::BS_GNU, FS::BS_WebKit };
+}
+
+template<>
 std::vector<FS::BracketAlignmentStyle> getValues<FS::BracketAlignmentStyle>()
 {
   return { FS::BAS_Align, FS::BAS_DontAlign, FS::BAS_AlwaysBreak };
 }
 
 template<>
+std::vector<FS::LanguageStandard> getValues<FS::LanguageStandard>()
+{
+  return { FS::LS_Cpp03, FS::LS_Cpp11, FS::LS_Auto };
+}
+
+template<>
+std::vector<FS::NamespaceIndentationKind> getValues<FS::NamespaceIndentationKind>()
+{
+  return { FS::NI_None, FS::NI_Inner, FS::NI_All };
+}
+
+template<>
+std::vector<FS::PointerAlignmentStyle> getValues<FS::PointerAlignmentStyle>()
+{
+  return { FS::PAS_Left, FS::PAS_Right, FS::PAS_Middle };
+}
+
+template<>
+std::vector<FS::ReturnTypeBreakingStyle> getValues<FS::ReturnTypeBreakingStyle>()
+{
+  return { FS::RTBS_None, FS::RTBS_All, FS::RTBS_TopLevel,
+           FS::RTBS_AllDefinitions, FS::RTBS_TopLevelDefinitions };
+}
+
+template<>
 std::vector<FS::ShortFunctionStyle> getValues<FS::ShortFunctionStyle>()
 {
   return { FS::SFS_None, FS::SFS_Empty, FS::SFS_Inline, FS::SFS_All };
+}
+
+template<>
+std::vector<FS::SpaceBeforeParensOptions> getValues<FS::SpaceBeforeParensOptions>()
+{
+  return { FS::SBPO_Never, FS::SBPO_ControlStatements, FS::SBPO_Always };
+}
+
+template<>
+std::vector<FS::UseTabStyle> getValues<FS::UseTabStyle>()
+{
+  return { FS::UT_Never, FS::UT_ForIndentation, FS::UT_Always };
 }
 
 template<typename T>
@@ -222,6 +273,22 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
 
 #define TRY_FORMAT(Style, CodeFiles, Value) tryFormat(Style, CodeFiles, #Value, &FormatStyle::Value)
 
+void writeUnguessableSetting(const char *ValueName)
+{
+  outs() << "\n# " << ValueName << ": ???\n";
+  outs() << "# (auto detection is not supported; please manually set)\n";
+}
+
+void writeNotApplicableSetting(const char *ValueName)
+{
+  outs() << "\n# " << ValueName << " does not apply to C/C++ code\n";
+}
+
+void writeAdvancedSetting(const char *ValueName)
+{
+  outs() << "\n# " << ValueName << " is an advanced setting and is omitted\n";
+}
+
 int main(int argc, char **argv)
 {
   std::vector<CodeFile> CodeFiles;
@@ -257,8 +324,22 @@ int main(int argc, char **argv)
           }
         });
 
+    TRY_FORMAT(Style, CodeFiles, UseTab);
+
+    tryFormat<int>(Style, CodeFiles, "TabWidth",
+                   { 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::TabWidth));
+
+    tryFormat<int>(Style, CodeFiles, "IndentWidth",
+                   { 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::IndentWidth));
+
+    tryFormat<int>(Style, CodeFiles, "ContinuationIndentWidth",
+                   { 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::ContinuationIndentWidth));
+
     tryFormat<int>(Style, CodeFiles, "AccessModifierOffset",
-                   { -8, -4, -2, 0, 2, 4, 8 },
+                   { -8, -4, -2, -1, 0, 1, 2, 4, 8 },
                    memberSetter(&FormatStyle::AccessModifierOffset));
 
     TRY_FORMAT(Style, CodeFiles, AlignAfterOpenBracket);
@@ -273,6 +354,71 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, AllowShortFunctionsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortLoopsOnASingleLine);
+    TRY_FORMAT(Style, CodeFiles, AlwaysBreakAfterReturnType);
+    TRY_FORMAT(Style, CodeFiles, AlwaysBreakBeforeMultilineStrings);
+    TRY_FORMAT(Style, CodeFiles, AlwaysBreakTemplateDeclarations);
+    TRY_FORMAT(Style, CodeFiles, BinPackArguments);
+    TRY_FORMAT(Style, CodeFiles, BinPackParameters);
+    writeAdvancedSetting("BraceWrapping");
+    TRY_FORMAT(Style, CodeFiles, BreakAfterJavaFieldAnnotations);
+    TRY_FORMAT(Style, CodeFiles, BreakBeforeBinaryOperators);
+    TRY_FORMAT(Style, CodeFiles, BreakBeforeBraces);
+    TRY_FORMAT(Style, CodeFiles, BreakBeforeTernaryOperators);
+    TRY_FORMAT(Style, CodeFiles, BreakConstructorInitializersBeforeComma);
+    TRY_FORMAT(Style, CodeFiles, BreakStringLiterals);
+    writeUnguessableSetting("ColumnLimit");
+
+    // TODO: Could search code for, e.g., `NOLINT:.*` or `LCOV_EXCL` or `^ IWYU pragma:`
+    writeUnguessableSetting("CommentPragmas");
+
+    TRY_FORMAT(Style, CodeFiles, ConstructorInitializerAllOnOneLineOrOnePerLine);
+    TRY_FORMAT(Style, CodeFiles, Cpp11BracedListStyle);
+    TRY_FORMAT(Style, CodeFiles, DerivePointerAlignment);
+    writeNotApplicableSetting("DisableFormat");
+    TRY_FORMAT(Style, CodeFiles, ExperimentalAutoDetectBinPacking);
+    writeUnguessableSetting("ForEachMacros");
+    writeUnguessableSetting("IncludeCategories");
+    writeUnguessableSetting("IncludeIsMainRegex");
+    TRY_FORMAT(Style, CodeFiles, IndentCaseLabels);
+    TRY_FORMAT(Style, CodeFiles, IndentWrappedFunctionNames);
+    writeNotApplicableSetting("JavaScriptQuotes");
+    TRY_FORMAT(Style, CodeFiles, KeepEmptyLinesAtTheStartOfBlocks);
+    writeUnguessableSetting("MacroBlockBegin");
+    writeUnguessableSetting("MacroBlockEnd");
+
+    tryFormat<int>(Style, CodeFiles, "MaxEmptyLinesToKeep",
+                   { 0, 1, 2, 3, 4, 1000 },
+                   memberSetter(&FormatStyle::MaxEmptyLinesToKeep));
+
+    TRY_FORMAT(Style, CodeFiles, NamespaceIndentation);
+    writeNotApplicableSetting("ObjCBlockIndentWidth");
+    writeNotApplicableSetting("ObjCSpaceAfterProperty");
+    writeNotApplicableSetting("ObjCSpaceBeforeProtocolList");
+    writeAdvancedSetting("PenaltyBreakBeforeFirstCallParameter");
+    writeAdvancedSetting("PenaltyBreakComment");
+    writeAdvancedSetting("PenaltyBreakFirstLessLess");
+    writeAdvancedSetting("PenaltyBreakString");
+    writeAdvancedSetting("PenaltyExcessCharacter");
+    writeAdvancedSetting("PenaltyReturnTypeOnItsOwnLine");
+    TRY_FORMAT(Style, CodeFiles, PointerAlignment);
+    TRY_FORMAT(Style, CodeFiles, ReflowComments);
+    TRY_FORMAT(Style, CodeFiles, SortIncludes);
+    TRY_FORMAT(Style, CodeFiles, SpaceAfterCStyleCast);
+    //TRY_FORMAT(Style, CodeFiles, SpaceAfterTemplateKeyword);  // TODO - added in 4.0
+    TRY_FORMAT(Style, CodeFiles, SpaceBeforeAssignmentOperators);
+    TRY_FORMAT(Style, CodeFiles, SpaceBeforeParens);
+    TRY_FORMAT(Style, CodeFiles, SpaceInEmptyParentheses);
+
+    tryFormat<int>(Style, CodeFiles, "SpacesBeforeTrailingComments",
+                   { 0, 1, 2, 3, 4, 5, 6, 7, 8 },
+                   memberSetter(&FormatStyle::SpacesBeforeTrailingComments));
+
+    TRY_FORMAT(Style, CodeFiles, SpacesInAngles);
+    TRY_FORMAT(Style, CodeFiles, SpacesInCStyleCastParentheses);
+    TRY_FORMAT(Style, CodeFiles, SpacesInContainerLiterals);
+    TRY_FORMAT(Style, CodeFiles, SpacesInParentheses);
+    TRY_FORMAT(Style, CodeFiles, SpacesInSquareBrackets);
+    TRY_FORMAT(Style, CodeFiles, Standard);  // TODO: Could pick Auto as a tiebreaker
   } catch (std::exception& e) {
     errs() << e.what() << "\n";
     return 1;
