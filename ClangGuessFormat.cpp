@@ -3,6 +3,7 @@
 using namespace std;
 
 #include "clang/Format/Format.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/YAMLTraits.h"
 
@@ -11,6 +12,7 @@ using namespace llvm;
 using namespace clang;
 using namespace clang::format;
 using clang::tooling::Replacements;
+using llvm::Optional;
 
 struct CodeFile {
   CodeFile(std::unique_ptr<const llvm::MemoryBuffer> Code, std::string FileName)
@@ -175,7 +177,7 @@ valueToString(const FormatStyle& Style, const char *ValueName, T Value)
                              + " within config");
   std::string::size_type From = Found + ValueKey.size();
   std::string::size_type To = Config.find('\n', From);
-  return std::string(Config, From, To - From);
+  return StringRef(Config.c_str() + From, To - From).trim();
 }
 
 template<typename T>
@@ -188,7 +190,8 @@ valueToString(const FormatStyle& Style, const char *ValueName, T Value)
 template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, const std::vector<T>& Values,
-               std::function<void(FormatStyle&, T)> Apply)
+               std::function<void(FormatStyle&, T)> Apply,
+               Optional<T> Preferred = llvm::None)
 {
   // Total edit distance for each value
   struct ResultType {
@@ -240,11 +243,24 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
 
   outs() << "\n";
 
-  // Print the best value as a configuration setting.
-  if (Results.size() > 1 && Results[0].TotalDistance == Results[1].TotalDistance)
-    outs() << "# " << ValueName << ": ???\n";
+  // Print the best value as a configuration setting.  Allow the use of
+  // "preferred" values - e.g., if ReflowComments true and false give the same
+  // results, it must be because comments were already reflowed.
+  Optional<std::string> BestValueString;
+  if (Results.size() == 1 || Results[0].TotalDistance < Results[1].TotalDistance)
+    BestValueString = Results[0].ValueString;
+  else if (Preferred) {
+    for (size_t i = 0; i < Results.size(); i++) {
+      if (Results[i].Value == *Preferred)
+        BestValueString = Results[i].ValueString;
+      else if (i + 1 < Results.size() && Results[i].TotalDistance != Results[i + 1].TotalDistance)
+        break;
+    }
+  }
+  if (BestValueString)
+    outs() << ValueName << ": " << *BestValueString << "\n";
   else
-    outs() << ValueName << ": " << Results[0].ValueString << "\n";
+    outs() << "# " << ValueName << ": ???\n";
 
   // Print full results as a comment.
   outs() << "# ";
@@ -265,13 +281,15 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
 
 template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
-               const char *ValueName, T FormatStyle::*Member)
+               const char *ValueName, T FormatStyle::*Member,
+               Optional<T> Preferred = llvm::None)
 {
   tryFormat<T>(Style, CodeFiles, ValueName, getValues<T>(),
-               memberSetter(Member));
+               memberSetter(Member), Preferred);
 }
 
-#define TRY_FORMAT(Style, CodeFiles, Value) tryFormat(Style, CodeFiles, #Value, &FormatStyle::Value)
+#define TRY_FORMAT(Style, CodeFiles, Value, ...) \
+    tryFormat(Style, CodeFiles, #Value, &FormatStyle::Value, ##__VA_ARGS__)
 
 void writeUnguessableSetting(const char *ValueName)
 {
@@ -401,8 +419,8 @@ int main(int argc, char **argv)
     writeAdvancedSetting("PenaltyExcessCharacter");
     writeAdvancedSetting("PenaltyReturnTypeOnItsOwnLine");
     TRY_FORMAT(Style, CodeFiles, PointerAlignment);
-    TRY_FORMAT(Style, CodeFiles, ReflowComments);
-    TRY_FORMAT(Style, CodeFiles, SortIncludes);
+    TRY_FORMAT(Style, CodeFiles, ReflowComments, Optional<bool>(true));
+    TRY_FORMAT(Style, CodeFiles, SortIncludes, Optional<bool>(true));
     TRY_FORMAT(Style, CodeFiles, SpaceAfterCStyleCast);
     //TRY_FORMAT(Style, CodeFiles, SpaceAfterTemplateKeyword);  // TODO - added in 4.0
     TRY_FORMAT(Style, CodeFiles, SpaceBeforeAssignmentOperators);
@@ -418,7 +436,7 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, SpacesInContainerLiterals);
     TRY_FORMAT(Style, CodeFiles, SpacesInParentheses);
     TRY_FORMAT(Style, CodeFiles, SpacesInSquareBrackets);
-    TRY_FORMAT(Style, CodeFiles, Standard);  // TODO: Could pick Auto as a tiebreaker
+    TRY_FORMAT(Style, CodeFiles, Standard);
   } catch (std::exception& e) {
     errs() << e.what() << "\n";
     return 1;
