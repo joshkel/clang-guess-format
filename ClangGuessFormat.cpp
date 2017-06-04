@@ -372,6 +372,12 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, AllowShortFunctionsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortLoopsOnASingleLine);
+
+    if (Style.AlwaysBreakAfterDefinitionReturnType != FormatStyle::DRTBS_None) {
+      outs() << "\nAlwaysBreakAfterDefinitionReturnType: None\n";
+      outs() << "# Deprecated; replaced with AlwaysBreakAfterReturnType\n";
+    }
+
     TRY_FORMAT(Style, CodeFiles, AlwaysBreakAfterReturnType);
     TRY_FORMAT(Style, CodeFiles, AlwaysBreakBeforeMultilineStrings);
     TRY_FORMAT(Style, CodeFiles, AlwaysBreakTemplateDeclarations);
