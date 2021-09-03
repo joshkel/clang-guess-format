@@ -157,7 +157,8 @@ std::string stringize(T Value)
   std::string Text;
   llvm::raw_string_ostream Stream(Text);
   llvm::yaml::Output Output(Stream);
-  yamlize(Output, Value, true);
+  llvm::yaml::EmptyContext ctx;
+  yamlize(Output, Value, true, ctx);
   return Text;
 }
 
@@ -177,7 +178,7 @@ valueToString(const FormatStyle& Style, const char *ValueName, T Value)
                              + " within config");
   std::string::size_type From = Found + ValueKey.size();
   std::string::size_type To = Config.find('\n', From);
-  return StringRef(Config.c_str() + From, To - From).trim();
+  return StringRef(Config.c_str() + From, To - From).trim().str();
 }
 
 template<typename T>
