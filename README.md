@@ -3,5 +3,8 @@
 Experimental utility to generate a `.clang-format` configuration for
 [clang-format](https://clang.llvm.org/docs/ClangFormat.html).
 
-The current code is hard-coded for Clang 3.9.1 installed on Ubuntu 16.04 from
-the [LLVM APT repository](http://apt.llvm.org/).
+Requires `libclang` v12.0, which can be installed with
+
+```bash
+apt-get install libclang-12-dev
+```
