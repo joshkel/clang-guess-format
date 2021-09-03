@@ -422,7 +422,17 @@ void writeAdvancedSetting(const char *ValueName)
 int main(int argc, char **argv)
 {
   std::vector<CodeFile> CodeFiles;
+  int ColumnLimitArg = 120;
   for (int i = 1; i < argc; i++) {
+    if (std::string(argv[i]) == "--column-limit") {
+      i++;
+      if (i >= argc) {
+        errs() << "--column-limit is missing a value\n";
+        return 1;
+      }
+      ColumnLimitArg = std::atoi(argv[i]);
+      continue;
+    }
     const std::string FileName = argv[i];
     ErrorOr<std::unique_ptr<MemoryBuffer>> CodeOrErr =
         MemoryBuffer::getFileOrSTDIN(FileName);
@@ -444,6 +454,10 @@ int main(int argc, char **argv)
   FormatStyle Style;
 
   try {
+    tryFormat<int>(Style, CodeFiles, "ColumnLimit",
+                   { ColumnLimitArg },
+                   memberSetter(&FormatStyle::AccessModifierOffset));
+
     tryFormat<std::string>(
         Style, CodeFiles, "BasedOnStyle",
         { "LLVM", "Google", "Chromium", "Mozilla", "WebKit" },
@@ -515,7 +529,6 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, BreakConstructorInitializers);
     TRY_FORMAT(Style, CodeFiles, BreakInheritanceList);
     TRY_FORMAT(Style, CodeFiles, BreakStringLiterals);
-    writeUnguessableSetting("ColumnLimit");
 
     // TODO: Could search code for, e.g., `NOLINT:.*` or `LCOV_EXCL` or `^ IWYU pragma:`
     writeUnguessableSetting("CommentPragmas");
