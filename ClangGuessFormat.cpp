@@ -367,7 +367,11 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
     BestValue = &Results[0].Value;
   }
   for (size_t i = 0; i < Results.size(); i++) {
-    if (Results[i].Value == Default || (Preferred && Results[i].Value == *Preferred)) {
+    if (Preferred && Results[i].Value == *Preferred) {
+      BestValueString = Results[i].ValueString;
+      BestValue = &Results[i].Value;
+      break;
+    } else if (Results[i].Value == Default) {
       BestValueString = Results[i].ValueString;
       BestValue = &Results[i].Value;
     } else if (i + 1 < Results.size() && Results[i].TotalDistance != Results[i + 1].TotalDistance) {
