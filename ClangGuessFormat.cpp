@@ -523,7 +523,12 @@ int main(int argc, char **argv)
 
     tryFormat<int>(Style, CodeFiles, "IndentWidth",
                    { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::IndentWidth),
+                    [=](FormatStyle& Style, unsigned W) {
+                     Style.IndentWidth = W;
+                     Style.TabWidth = W;
+                     Style.AccessModifierOffset = -W;
+                     Style.ContinuationIndentWidth = W;
+                   },
                    Style.IndentWidth);
     auto IndentWidthValue = Style.IndentWidth;
 
