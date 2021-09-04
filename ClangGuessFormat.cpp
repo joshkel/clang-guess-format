@@ -1,4 +1,6 @@
 #include <iostream>
+#include <regex>
+#include <string_view>
 
 using namespace std;
 
@@ -30,9 +32,10 @@ struct CodeFile {
 #define MIN3(a, b, c) ((a) < (b) ? ((a) < (c) ? (a) : (c)) : ((b) < (c) ? (b) : (c)))
 
 // Source: https://en.wikibooks.org/wiki/Algorithm_Implementation/Strings/Levenshtein_distance#C
-int levenshtein(const char *s1, const char *s2,
-    const unsigned int s1len, const unsigned int s2len)
+int levenshtein(std::string_view s1, std::string_view s2)
 {
+  size_t s1len = s1.size();
+  size_t s2len = s2.size();
   unsigned int column[s1len+1];
   for (unsigned int y = 1; y <= s1len; y++) {
     column[y] = y;
@@ -49,14 +52,42 @@ int levenshtein(const char *s1, const char *s2,
   return column[s1len];
 }
 
+std::string stripIndentation(const std::string &StrIn)
+{
+  static const std::regex Pattern("\n(#?)[ \t]+", std::regex::extended | std::regex::optimize);
+  return std::regex_replace(StrIn, Pattern, "\n$1");
+}
+
+std::string stripTrailingWhitespace(const std::string &StrIn)
+{
+  // also matches backslashes to handle multi-line macros
+  static const std::regex Pattern("[ \t]+\\\\?\n", std::regex::extended | std::regex::optimize);
+  return std::regex_replace(StrIn, Pattern, "\n");
+}
+
+std::string normalize(const char *s, const size_t len,
+                      bool StripIndentation, bool StripTrailing)
+{
+  std::string str(s, len);
+  if (StripIndentation)
+    str = stripIndentation(str);
+  if (StripTrailing)
+    str = stripTrailingWhitespace(str);
+  return str;
+}
+
 int getTotalDistance(const llvm::MemoryBuffer& Code,
-                     const Replacements& FormatChanges)
+                     const Replacements& FormatChanges,
+                     bool StripIndentation, bool StripTrailing)
 {
   int TotalDistance = 0;
   for (const auto& i : FormatChanges) {
     TotalDistance += levenshtein(
-        Code.getBufferStart() + i.getOffset(), i.getReplacementText().data(),
-        i.getLength(), i.getReplacementText().size());
+        normalize(Code.getBufferStart() + i.getOffset(), i.getLength(),
+                  StripIndentation, StripTrailing),
+        normalize(i.getReplacementText().data(), i.getReplacementText().size(),
+                  StripIndentation, StripTrailing)
+        );
   }
   return TotalDistance;
 }
@@ -315,6 +346,15 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
   std::vector<ResultType> Results;
   const int FAILED = std::numeric_limits<int>::max();
 
+  std::string ValueNameStr(ValueName);
+  bool StripIndentation = (ValueNameStr.find("Indent") == std::string::npos) &&
+                          (ValueNameStr.find("Align") == std::string::npos) &&
+                          (ValueNameStr.find("Tab") == std::string::npos) &&
+                          (ValueNameStr != "BasedOnStyle") &&
+                          (ValueNameStr != "AccessModifierOffset") &&
+                          (ValueNameStr != "BreakBeforeBraces");
+  bool StripTrailing = ValueNameStr != "EscapedNewlineAlignmentStyle";
+
   for (const T& v : Values) {
     Apply(Style, v);
 
@@ -331,7 +371,8 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
         break;
       }
 
-      TotalDistance += getTotalDistance(*CodeFile.Code, FormatChanges);
+      TotalDistance += getTotalDistance(*CodeFile.Code, FormatChanges,
+                                        StripIndentation, StripTrailing);
     }
 
     std::string ValueString = valueToString(Style, ValueName, v);
@@ -492,41 +533,6 @@ int main(int argc, char **argv)
     else
       outs() << "\n# ColumnLimit: " << Style.ColumnLimit << "\n";
 
-    TRY_FORMAT(Style, CodeFiles, UseTab);
-
-    tryFormat<int>(Style, CodeFiles, "TabWidth",
-                   { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::TabWidth),
-                   Style.TabWidth);
-
-    tryFormat<int>(Style, CodeFiles, "IndentWidth",
-                   { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::IndentWidth),
-                   Style.IndentWidth);
-
-    tryFormat<int>(Style, CodeFiles, "ContinuationIndentWidth",
-                   { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::ContinuationIndentWidth),
-                   Style.ContinuationIndentWidth);
-
-    tryFormat<int>(Style, CodeFiles, "AccessModifierOffset",
-                   { -8, -4, -2, -1, 0, 1, 2, 4, 8 },
-                   memberSetter(&FormatStyle::AccessModifierOffset),
-                   Style.AccessModifierOffset);
-
-    tryFormat<int>(Style, CodeFiles, "ConstructorInitializerIndentWidth",
-                   { 0, 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::AccessModifierOffset),
-                   Style.AccessModifierOffset);
-
-    TRY_FORMAT(Style, CodeFiles, AlignAfterOpenBracket);
-    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveAssignments);
-    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveBitFields);
-    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveDeclarations);
-    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveMacros);
-    TRY_FORMAT(Style, CodeFiles, AlignEscapedNewlines);
-    TRY_FORMAT(Style, CodeFiles, AlignOperands);
-    TRY_FORMAT(Style, CodeFiles, AlignTrailingComments);
     TRY_FORMAT(Style, CodeFiles, AllowAllArgumentsOnNextLine);
     TRY_FORMAT(Style, CodeFiles, AllowAllConstructorInitializersOnNextLine);
     TRY_FORMAT(Style, CodeFiles, AllowAllParametersOfDeclarationOnNextLine);
@@ -537,12 +543,6 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, AllowShortIfStatementsOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortLambdasOnASingleLine);
     TRY_FORMAT(Style, CodeFiles, AllowShortLoopsOnASingleLine);
-
-    if (Style.AlwaysBreakAfterDefinitionReturnType != FormatStyle::DRTBS_None) {
-      outs() << "\nAlwaysBreakAfterDefinitionReturnType: None\n";
-      outs() << "# Deprecated; replaced with AlwaysBreakAfterReturnType\n";
-    }
-
     TRY_FORMAT(Style, CodeFiles, AlwaysBreakAfterReturnType);
     TRY_FORMAT(Style, CodeFiles, AlwaysBreakBeforeMultilineStrings);
     TRY_FORMAT(Style, CodeFiles, AlwaysBreakTemplateDeclarations);
@@ -552,7 +552,6 @@ int main(int argc, char **argv)
     writeAdvancedSetting("BraceWrapping");
     writeNotApplicableSetting("BreakAfterJavaFieldAnnotations");
     TRY_FORMAT(Style, CodeFiles, BreakBeforeBinaryOperators);
-    TRY_FORMAT(Style, CodeFiles, BreakBeforeBraces);
     TRY_FORMAT(Style, CodeFiles, BreakBeforeConceptDeclarations);
     TRY_FORMAT(Style, CodeFiles, BreakBeforeTernaryOperators);
     TRY_FORMAT(Style, CodeFiles, BreakConstructorInitializers);
@@ -575,13 +574,6 @@ int main(int argc, char **argv)
     writeUnguessableSetting("IncludeCategories");
     writeUnguessableSetting("IncludeIsMainRegex");
     writeAdvancedSetting("IncludeStyle");
-    TRY_FORMAT(Style, CodeFiles, IndentCaseBlocks);
-    TRY_FORMAT(Style, CodeFiles, IndentCaseLabels);
-    TRY_FORMAT(Style, CodeFiles, IndentExternBlock);
-    TRY_FORMAT(Style, CodeFiles, IndentGotoLabels);
-    TRY_FORMAT(Style, CodeFiles, IndentPPDirectives);
-    TRY_FORMAT(Style, CodeFiles, IndentRequires);
-    TRY_FORMAT(Style, CodeFiles, IndentWrappedFunctionNames);
     TRY_FORMAT(Style, CodeFiles, InsertTrailingCommas);
     writeNotApplicableSetting("JavaImportGroups");
     writeNotApplicableSetting("JavaScriptQuotes");
@@ -596,7 +588,6 @@ int main(int argc, char **argv)
                    memberSetter(&FormatStyle::MaxEmptyLinesToKeep),
                    Style.MaxEmptyLinesToKeep, 2);
 
-    TRY_FORMAT(Style, CodeFiles, NamespaceIndentation);
     writeUnguessableSetting("NamespaceMacros");
     writeNotApplicableSetting("ObjCBinPackProtocolList");
     writeNotApplicableSetting("ObjCBlockIndentWidth");
@@ -644,7 +635,6 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, SpacesInConditionalStatement);
     TRY_FORMAT(Style, CodeFiles, SpacesInContainerLiterals);
     TRY_FORMAT(Style, CodeFiles, SpacesInCStyleCastParentheses);
-    TRY_FORMAT(Style, CodeFiles, SpacesInContainerLiterals);
     TRY_FORMAT(Style, CodeFiles, SpacesInParentheses);
     TRY_FORMAT(Style, CodeFiles, SpacesInSquareBrackets);
     TRY_FORMAT(Style, CodeFiles, Standard);
@@ -652,6 +642,55 @@ int main(int argc, char **argv)
     writeUnguessableSetting("StatementAttributeLikeMacros");
     writeUnguessableSetting("TypenameMacros");
     writeUnguessableSetting("WhitespaceSensitiveMacros");
+
+    // Run indentation tests last, after options affecting line-break behavior
+    // have been configured
+
+    TRY_FORMAT(Style, CodeFiles, UseTab);
+
+    tryFormat<int>(Style, CodeFiles, "TabWidth",
+                   { 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::TabWidth),
+                   Style.TabWidth);
+
+    tryFormat<int>(Style, CodeFiles, "IndentWidth",
+                   { 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::IndentWidth),
+                   Style.IndentWidth);
+
+    tryFormat<int>(Style, CodeFiles, "ContinuationIndentWidth",
+                   { 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::ContinuationIndentWidth),
+                   Style.ContinuationIndentWidth);
+
+    tryFormat<int>(Style, CodeFiles, "AccessModifierOffset",
+                   { -8, -4, -2, -1, 0, 1, 2, 4, 8 },
+                   memberSetter(&FormatStyle::AccessModifierOffset),
+                   Style.AccessModifierOffset);
+
+    tryFormat<int>(Style, CodeFiles, "ConstructorInitializerIndentWidth",
+                   { 0, 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::AccessModifierOffset),
+                   Style.AccessModifierOffset);
+
+    TRY_FORMAT(Style, CodeFiles, IndentCaseBlocks);
+    TRY_FORMAT(Style, CodeFiles, IndentCaseLabels);
+    TRY_FORMAT(Style, CodeFiles, IndentExternBlock);
+    TRY_FORMAT(Style, CodeFiles, IndentGotoLabels);
+    TRY_FORMAT(Style, CodeFiles, IndentPPDirectives);
+    TRY_FORMAT(Style, CodeFiles, IndentRequires);
+    TRY_FORMAT(Style, CodeFiles, IndentWrappedFunctionNames);
+    TRY_FORMAT(Style, CodeFiles, NamespaceIndentation);
+    TRY_FORMAT(Style, CodeFiles, AlignAfterOpenBracket);
+    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveAssignments);
+    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveBitFields);
+    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveDeclarations);
+    TRY_FORMAT(Style, CodeFiles, AlignConsecutiveMacros);
+    TRY_FORMAT(Style, CodeFiles, AlignEscapedNewlines);
+    TRY_FORMAT(Style, CodeFiles, AlignOperands);
+    TRY_FORMAT(Style, CodeFiles, AlignTrailingComments);
+    TRY_FORMAT(Style, CodeFiles, BreakBeforeBraces);
+
   } catch (std::exception& e) {
     errs() << e.what() << "\n";
     return 1;

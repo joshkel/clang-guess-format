@@ -4,7 +4,7 @@ project(ClangGuessFormat)
 find_package(Clang REQUIRED)
 message(STATUS "Using ${Clang_DIR}/ClangConfig.cmake")
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 
 add_executable(${PROJECT_NAME} ClangGuessFormat.cpp)
