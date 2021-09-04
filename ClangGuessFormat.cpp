@@ -196,7 +196,7 @@ std::vector<FS::IndentExternBlockStyle> getValues<FS::IndentExternBlockStyle>()
 template<>
 std::vector<FS::LanguageStandard> getValues<FS::LanguageStandard>()
 {
-  return { FS::LS_Cpp03, FS::LS_Cpp11, FS::LS_Auto };
+  return { FS::LS_Cpp03, FS::LS_Cpp11, FS::LS_Latest, FS::LS_Auto };
 }
 
 template<>
