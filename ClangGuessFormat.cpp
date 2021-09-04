@@ -516,16 +516,29 @@ int main(int argc, char **argv)
 
   try {
 
+    // Figure out main indentation params first to make the base style selection more robust
+    clang::format::getPredefinedStyle("LLVM", FormatStyle::LK_Cpp, &Style);
+    TRY_FORMAT(Style, CodeFiles, UseTab);
+    auto UseTabValue = Style.UseTab;
+
+    tryFormat<int>(Style, CodeFiles, "IndentWidth",
+                   { 1, 2, 3, 4, 8 },
+                   memberSetter(&FormatStyle::IndentWidth),
+                   Style.IndentWidth);
+    auto IndentWidthValue = Style.IndentWidth;
+
     tryFormat<std::string>(
         Style, CodeFiles, "BasedOnStyle",
         { "LLVM", "Google", "Chromium", "Mozilla", "WebKit" },
-        [ColumnLimitArg](FormatStyle& Style, std::string StyleName) {
+        [=](FormatStyle& Style, std::string StyleName) {
           if (!clang::format::getPredefinedStyle(StyleName, FormatStyle::LK_Cpp, &Style)) {
             errs() << "Failed to get style " << StyleName << "\n";
             exit(1);
           }
           if (ColumnLimitArg >= 0)
             Style.ColumnLimit = ColumnLimitArg;
+          Style.UseTab = UseTabValue;
+          Style.IndentWidth = IndentWidthValue;
         }, "LLVM");
 
     if (ColumnLimitArg >= 0)
@@ -646,17 +659,10 @@ int main(int argc, char **argv)
     // Run indentation tests last, after options affecting line-break behavior
     // have been configured
 
-    TRY_FORMAT(Style, CodeFiles, UseTab);
-
     tryFormat<int>(Style, CodeFiles, "TabWidth",
                    { 1, 2, 3, 4, 8 },
                    memberSetter(&FormatStyle::TabWidth),
                    Style.TabWidth);
-
-    tryFormat<int>(Style, CodeFiles, "IndentWidth",
-                   { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::IndentWidth),
-                   Style.IndentWidth);
 
     tryFormat<int>(Style, CodeFiles, "ContinuationIndentWidth",
                    { 1, 2, 3, 4, 8 },
