@@ -303,7 +303,7 @@ template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, const std::vector<T>& Values,
                std::function<void(FormatStyle&, T)> Apply,
-               const T &Default,
+               const T Default,
                Optional<T> Preferred = llvm::None)
 {
   // Total edit distance for each value
