@@ -400,7 +400,10 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
   outs() << "\n";
 
   // And lock in one of the values for further work.
-  Apply(Style, Results[0].Value);
+  if (BestValue)
+    Apply(Style, *BestValue);
+  else
+    Apply(Style, Results[0].Value);
 }
 
 template<typename T>
