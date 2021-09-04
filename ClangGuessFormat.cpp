@@ -588,7 +588,7 @@ int main(int argc, char **argv)
     tryFormat<int>(Style, CodeFiles, "MaxEmptyLinesToKeep",
                    { 0, 1, 2, 3, 4, 1000 },
                    memberSetter(&FormatStyle::MaxEmptyLinesToKeep),
-                   Style.MaxEmptyLinesToKeep);
+                   Style.MaxEmptyLinesToKeep, 2);
 
     TRY_FORMAT(Style, CodeFiles, NamespaceIndentation);
     writeUnguessableSetting("NamespaceMacros");
