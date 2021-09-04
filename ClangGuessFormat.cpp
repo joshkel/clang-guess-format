@@ -567,7 +567,6 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, Cpp11BracedListStyle);
     writeUnguessableSetting("UseCRLF");
     writeUnguessableSetting("DeriveLineEnding");
-    TRY_FORMAT(Style, CodeFiles, DerivePointerAlignment);
     writeNotApplicableSetting("DisableFormat");
     TRY_FORMAT(Style, CodeFiles, EmptyLineBeforeAccessModifier);
     TRY_FORMAT(Style, CodeFiles, ExperimentalAutoDetectBinPacking);
@@ -614,6 +613,7 @@ int main(int argc, char **argv)
     writeAdvancedSetting("PenaltyIndentedWhitespace");
     writeAdvancedSetting("PenaltyReturnTypeOnItsOwnLine");
     TRY_FORMAT(Style, CodeFiles, PointerAlignment);
+    TRY_FORMAT(Style, CodeFiles, DerivePointerAlignment, { false });
     writeAdvancedSetting("RawStringFormat");
     writeAdvancedSetting("RawStringFormats");
     TRY_FORMAT(Style, CodeFiles, ReflowComments, { true });
