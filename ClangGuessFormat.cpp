@@ -303,6 +303,7 @@ template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
                const char *ValueName, const std::vector<T>& Values,
                std::function<void(FormatStyle&, T)> Apply,
+               const T &Default,
                Optional<T> Preferred = llvm::None)
 {
   // Total edit distance for each value
@@ -334,8 +335,9 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
     }
 
     std::string ValueString = valueToString(Style, ValueName, v);
-    if (HasFailures)
+    if (HasFailures) {
       Results.push_back({v, ValueString, FAILED});
+    }
     else
       Results.push_back({v, ValueString, TotalDistance});
   }
@@ -359,27 +361,37 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
   // "preferred" values - e.g., if ReflowComments true and false give the same
   // results, it must be because comments were already reflowed.
   Optional<std::string> BestValueString;
-  if (Results.size() == 1 || Results[0].TotalDistance < Results[1].TotalDistance)
+  T *BestValue = nullptr;
+  if (Results.size() == 1 || Results[0].TotalDistance < Results[1].TotalDistance) {
     BestValueString = Results[0].ValueString;
-  else if (Preferred) {
-    for (size_t i = 0; i < Results.size(); i++) {
-      if (Results[i].Value == *Preferred)
-        BestValueString = Results[i].ValueString;
-      else if (i + 1 < Results.size() && Results[i].TotalDistance != Results[i + 1].TotalDistance)
-        break;
+    BestValue = &Results[0].Value;
+  }
+  for (size_t i = 0; i < Results.size(); i++) {
+    if (Results[i].Value == Default || (Preferred && Results[i].Value == *Preferred)) {
+      BestValueString = Results[i].ValueString;
+      BestValue = &Results[i].Value;
+    } else if (i + 1 < Results.size() && Results[i].TotalDistance != Results[i + 1].TotalDistance) {
+      break;
     }
   }
-  if (BestValueString)
-    outs() << ValueName << ": " << *BestValueString << "\n";
-  else
+  if (BestValueString) {
+    if (*BestValue == Default)
+      outs() << "# " << ValueName << ": " << *BestValueString << "\n";
+    else
+      outs() << ValueName << ": " << *BestValueString << "\n";
+  } else {
     outs() << "# " << ValueName << ": ???\n";
+  }
 
   // Print full results as a comment.
   outs() << "# ";
   for (const auto& i : Results) {
     if (i.Value != Results[0].Value)
       outs() << ", ";
-    outs() << i.ValueString << " ";
+    if (i.Value == Default)
+      outs() << i.ValueString << "* ";
+    else
+      outs() << i.ValueString << " ";
     if (i.TotalDistance == FAILED)
       outs() << "failed";
     else
@@ -393,15 +405,15 @@ void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
 
 template<typename T>
 void tryFormat(FormatStyle& Style, const std::vector<CodeFile>& CodeFiles,
-               const char *ValueName, T FormatStyle::*Member,
+               const char *ValueName, T FormatStyle::*Member, const T &Default,
                Optional<T> Preferred = llvm::None)
 {
   tryFormat<T>(Style, CodeFiles, ValueName, getValues<T>(),
-               memberSetter(Member), Preferred);
+               memberSetter(Member), Default, Preferred);
 }
 
 #define TRY_FORMAT(Style, CodeFiles, Value, ...) \
-    tryFormat(Style, CodeFiles, #Value, &FormatStyle::Value, ##__VA_ARGS__)
+    tryFormat(Style, CodeFiles, #Value, &FormatStyle::Value, Style.Value, ##__VA_ARGS__)
 
 void writeUnguessableSetting(const char *ValueName)
 {
@@ -450,6 +462,7 @@ int main(int argc, char **argv)
   }
 
   outs() << "# Total edit distance (lower is better)\n";
+  outs() << "# Default values are marked with an asterisk\n";
 
   FormatStyle Style;
 
@@ -465,7 +478,7 @@ int main(int argc, char **argv)
           }
           if (ColumnLimitArg >= 0)
             Style.ColumnLimit = ColumnLimitArg;
-        });
+        }, "LLVM");
 
     if (ColumnLimitArg >= 0)
       outs() << "\nColumnLimit: " << ColumnLimitArg << "\n";
@@ -476,23 +489,28 @@ int main(int argc, char **argv)
 
     tryFormat<int>(Style, CodeFiles, "TabWidth",
                    { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::TabWidth));
+                   memberSetter(&FormatStyle::TabWidth),
+                   Style.TabWidth);
 
     tryFormat<int>(Style, CodeFiles, "IndentWidth",
                    { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::IndentWidth));
+                   memberSetter(&FormatStyle::IndentWidth),
+                   Style.IndentWidth);
 
     tryFormat<int>(Style, CodeFiles, "ContinuationIndentWidth",
                    { 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::ContinuationIndentWidth));
+                   memberSetter(&FormatStyle::ContinuationIndentWidth),
+                   Style.ContinuationIndentWidth);
 
     tryFormat<int>(Style, CodeFiles, "AccessModifierOffset",
                    { -8, -4, -2, -1, 0, 1, 2, 4, 8 },
-                   memberSetter(&FormatStyle::AccessModifierOffset));
+                   memberSetter(&FormatStyle::AccessModifierOffset),
+                   Style.AccessModifierOffset);
 
     tryFormat<int>(Style, CodeFiles, "ConstructorInitializerIndentWidth",
                    { 0, 1, 2, 3, 4, 8 },
-                   memberSetter(&FormatStyle::AccessModifierOffset));
+                   memberSetter(&FormatStyle::AccessModifierOffset),
+                   Style.AccessModifierOffset);
 
     TRY_FORMAT(Style, CodeFiles, AlignAfterOpenBracket);
     TRY_FORMAT(Style, CodeFiles, AlignConsecutiveAssignments);
@@ -569,7 +587,8 @@ int main(int argc, char **argv)
 
     tryFormat<int>(Style, CodeFiles, "MaxEmptyLinesToKeep",
                    { 0, 1, 2, 3, 4, 1000 },
-                   memberSetter(&FormatStyle::MaxEmptyLinesToKeep));
+                   memberSetter(&FormatStyle::MaxEmptyLinesToKeep),
+                   Style.MaxEmptyLinesToKeep);
 
     TRY_FORMAT(Style, CodeFiles, NamespaceIndentation);
     writeUnguessableSetting("NamespaceMacros");
@@ -590,8 +609,8 @@ int main(int argc, char **argv)
     TRY_FORMAT(Style, CodeFiles, PointerAlignment);
     writeAdvancedSetting("RawStringFormat");
     writeAdvancedSetting("RawStringFormats");
-    TRY_FORMAT(Style, CodeFiles, ReflowComments, Optional<bool>(true));
-    TRY_FORMAT(Style, CodeFiles, SortIncludes, Optional<bool>(true));
+    TRY_FORMAT(Style, CodeFiles, ReflowComments, { true });
+    TRY_FORMAT(Style, CodeFiles, SortIncludes, { true });
     writeNotApplicableSetting("SortJavaStaticImport");
     TRY_FORMAT(Style, CodeFiles, SortUsingDeclarations);
     TRY_FORMAT(Style, CodeFiles, SpaceAfterCStyleCast);
@@ -611,7 +630,8 @@ int main(int argc, char **argv)
 
     tryFormat<int>(Style, CodeFiles, "SpacesBeforeTrailingComments",
                    { 0, 1, 2, 3, 4, 5, 6, 7, 8 },
-                   memberSetter(&FormatStyle::SpacesBeforeTrailingComments));
+                   memberSetter(&FormatStyle::SpacesBeforeTrailingComments),
+                   Style.SpacesBeforeTrailingComments);
 
     TRY_FORMAT(Style, CodeFiles, SpacesInAngles);
     TRY_FORMAT(Style, CodeFiles, SpacesInConditionalStatement);
