@@ -422,7 +422,7 @@ void writeAdvancedSetting(const char *ValueName)
 int main(int argc, char **argv)
 {
   std::vector<CodeFile> CodeFiles;
-  int ColumnLimitArg = 120;
+  int ColumnLimitArg = -1;
   for (int i = 1; i < argc; i++) {
     if (std::string(argv[i]) == "--column-limit") {
       i++;
@@ -454,19 +454,23 @@ int main(int argc, char **argv)
   FormatStyle Style;
 
   try {
-    tryFormat<int>(Style, CodeFiles, "ColumnLimit",
-                   { ColumnLimitArg },
-                   memberSetter(&FormatStyle::AccessModifierOffset));
 
     tryFormat<std::string>(
         Style, CodeFiles, "BasedOnStyle",
         { "LLVM", "Google", "Chromium", "Mozilla", "WebKit" },
-        [](FormatStyle& Style, std::string StyleName) {
+        [ColumnLimitArg](FormatStyle& Style, std::string StyleName) {
           if (!clang::format::getPredefinedStyle(StyleName, FormatStyle::LK_Cpp, &Style)) {
             errs() << "Failed to get style " << StyleName << "\n";
             exit(1);
           }
+          if (ColumnLimitArg >= 0)
+            Style.ColumnLimit = ColumnLimitArg;
         });
+
+    if (ColumnLimitArg >= 0)
+      outs() << "\nColumnLimit: " << ColumnLimitArg << "\n";
+    else
+      outs() << "\n# ColumnLimit: " << Style.ColumnLimit << "\n";
 
     TRY_FORMAT(Style, CodeFiles, UseTab);
 
