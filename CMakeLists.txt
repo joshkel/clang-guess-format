@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.4)
 project(ClangGuessFormat)
 
+set(Clang_DIR /usr/lib/cmake/clang-12/ CACHE FILEPATH "Clang location")
 find_package(Clang REQUIRED)
-message(STATUS "Using ${Clang_DIR}/ClangConfig.cmake")
 
 set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -Wno-unused-parameter)
